@@ -10,6 +10,8 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/yohagos/go-clean-user-api/internal/domain/entity"
 	urepo "github.com/yohagos/go-clean-user-api/internal/domain/repository"
+	"github.com/yohagos/go-clean-user-api/internal/logger"
+	"go.uber.org/zap"
 )
 
 type userRepository struct {
@@ -23,6 +25,12 @@ func NewUserRepository(db *sqlx.DB) urepo.UserRepository {
 }
 
 func (r *userRepository) Create(ctx context.Context, user *entity.User) error {
+	logger.Log.Info(
+		"Postgres Service | User Create => received User Object", 
+		zap.String("user_id", user.ID.String()),
+		zap.String("email", user.Email),
+		zap.String("name", user.Name),
+	)
 	query := `
 		INSERT INTO users (id, email, name, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)
@@ -40,7 +48,7 @@ func (r *userRepository) Create(ctx context.Context, user *entity.User) error {
 	).Scan(&user.CreatedAt, &user.UpdatedAt)
 
 	if err != nil {
-		return fmt.Errorf("failed to create use: %w", err)
+		return fmt.Errorf("failed to create user: %w", err)
 	}
 	return nil
 }
