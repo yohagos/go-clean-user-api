@@ -11,7 +11,6 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -v -o main ./cmd/api
 
-CMD ["go", "run", "./cmd/api"]
 
 FROM alpine:latest
 
@@ -23,6 +22,8 @@ WORKDIR /root/
 
 COPY --from=builder /app/main .
 COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/configs ./configs
+COPY --from=builder /app/docs ./docs
 
 RUN chmod +x /root/main
 
