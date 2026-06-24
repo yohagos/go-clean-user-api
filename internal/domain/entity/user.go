@@ -4,8 +4,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/yohagos/go-clean-user-api/internal/logger"
-	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -29,10 +27,6 @@ func (u *User) Validate() error {
 }
 
 func (u *User) HashPassword() error {
-	logger.Log.Info(
-		"Hashing User Password",
-		zap.Any("User Object", u),
-	)
 	hashed, err := bcrypt.GenerateFromPassword(
 		[]byte(u.Password),
 		bcrypt.DefaultCost,
@@ -42,10 +36,6 @@ func (u *User) HashPassword() error {
 	}
 
 	u.Password = string(hashed)
-	logger.Log.Info(
-		"User Password was hashed successfully",
-		zap.Any("Hashed User Passw rod", u.Password),
-	)
 	return nil
 }
 
