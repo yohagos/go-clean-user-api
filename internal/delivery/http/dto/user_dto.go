@@ -32,12 +32,6 @@ type UsersListResponse struct {
 	Offset     int            `json:"offset"`
 }
 
-type ErrorResponse struct {
-	Error   string `json:"error" example:"user not found"`
-	Code    int    `json:"code" example:"404"`
-	Details string `json:"details,omitempty"`
-}
-
 func ToUserResponse(user *entity.User) UserResponse {
 	return UserResponse{
 		ID:        user.ID,

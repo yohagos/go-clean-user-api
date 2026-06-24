@@ -10,8 +10,6 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/yohagos/go-clean-user-api/internal/domain/entity"
 	urepo "github.com/yohagos/go-clean-user-api/internal/domain/repository"
-	"github.com/yohagos/go-clean-user-api/internal/logger"
-	"go.uber.org/zap"
 )
 
 type userRepository struct {
@@ -25,15 +23,9 @@ func NewUserRepository(db *sqlx.DB) urepo.UserRepository {
 }
 
 func (r *userRepository) Create(ctx context.Context, user *entity.User) error {
-	logger.Log.Info(
-		"Postgres Service | User Create => received User Object", 
-		zap.String("user_id", user.ID.String()),
-		zap.String("email", user.Email),
-		zap.String("name", user.Name),
-	)
 	query := `
-		INSERT INTO users (id, email, name, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO users (id, email, name, created_at, updated_at, password)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING created_at, updated_at
 	`
 
@@ -45,6 +37,7 @@ func (r *userRepository) Create(ctx context.Context, user *entity.User) error {
 		user.Name,
 		user.CreatedAt,
 		user.UpdatedAt,
+		user.Password,
 	).Scan(&user.CreatedAt, &user.UpdatedAt)
 
 	if err != nil {
@@ -57,7 +50,7 @@ func (r *userRepository) GetByID(
 	ctx context.Context,
 	id uuid.UUID,
 ) (*entity.User, error) {
-	query := `SELECT id, email, name, created_at, updated_at FROM users WHERE id = $1`
+	query := `SELECT id, email, name, created_at, updated_at, password FROM users WHERE id = $1`
 
 	var user entity.User
 	err := r.db.GetContext(ctx, &user, query, id)
@@ -74,7 +67,7 @@ func (r *userRepository) GetByEmail(
 	ctx context.Context,
 	email string,
 ) (*entity.User, error) {
-	query := `SELECT id, email, name, created_at, updated_at FROM users WHERE email = $1`
+	query := `SELECT id, email, name, created_at, updated_at, password FROM users WHERE email = $1`
 
 	var user entity.User
 	err := r.db.GetContext(
