@@ -32,16 +32,14 @@ type LoginRequest struct {
 type RegisterRequest struct {
 	Email    string `json:"email" binding:"required,email"`
 	Name     string `json:"name" binding:"required,min=2,max=100"`
-	Password string `json:"password" binding:"required,min=6"`
-}
-
-type TokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiresIn    int64  `json:"expires_in"`
+	Password string `json:"password" binding:"required"`
 }
 
 type Credentials struct {
 	Email    string
 	Password string
+}
+
+func (lr *LoginRequest) ToString() string {
+	return "Email: " + lr.Email + ", Password: " + lr.Password
 }
