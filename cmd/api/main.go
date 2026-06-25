@@ -10,17 +10,46 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/go-playground/validator/v10"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
+	"go.uber.org/zap"
+
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+
+	_ "github.com/yohagos/go-clean-user-api/docs"
+
 	"github.com/yohagos/go-clean-user-api/internal/config"
 	"github.com/yohagos/go-clean-user-api/internal/delivery/http/handler"
 	"github.com/yohagos/go-clean-user-api/internal/delivery/http/middleware"
+	"github.com/yohagos/go-clean-user-api/internal/delivery/http/validators"
+	"github.com/yohagos/go-clean-user-api/internal/domain/service"
 	"github.com/yohagos/go-clean-user-api/internal/domain/usecase"
 	"github.com/yohagos/go-clean-user-api/internal/logger"
 	"github.com/yohagos/go-clean-user-api/internal/repository/postgres"
-	"go.uber.org/zap"
 )
 
+// @title User Management API
+// @version 1.0
+// @description This is a production-ready User Management API with JWT authentication
+// @termsOfService https://example.com/terms/
+
+// @contact.name API Support
+// @contact.url https://example.com/support
+// @contact.email support@example.com
+
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
+
+// @host localhost:8080
+// @BasePath /api/v1
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by a space and the JWT token.
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
@@ -32,11 +61,9 @@ func main() {
 	}
 	defer logger.Sync()
 
-	
 	logger.Log.Info(
-		"Starting User API Server",
-		zap.String("mode", cfg.Server.Mode),
-		zap.String("port", cfg.Server.Port),
+		"Starting API Server....",
+		zap.Any("Server Configs", cfg.Server),
 	)
 
 	db, err := initDB(cfg)
@@ -45,11 +72,30 @@ func main() {
 	}
 	defer db.Close()
 
-	userRepo := postgres.NewUserRepository(db)
-	userUseCase := usecase.NewUserUseCase(userRepo)
-	userHandler := handler.NewUserHandler(userUseCase)
+	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
+		validators.RegisterValidators(v)
+		logger.Log.Info("Custom Validators registered successfully!!!")
+	}
 
-	router := setupRouter(cfg, userHandler)
+	userRepo := postgres.NewUserRepository(db)
+	tokenRepo := postgres.NewTokenRepository(db)
+
+	tokenConfig := service.TokenConfig{
+		AccessTokenSecret:  cfg.JWT.AccessSecret,
+		RefreshTokenSecret: cfg.JWT.RefreshSecret,
+		AccessTokenTTL:     time.Duration(cfg.JWT.AccessTTL) * time.Second,
+		RefreshTokenTTL:    time.Duration(cfg.JWT.RefreshTTL) * time.Second,
+	}
+
+	tokenService := service.NewTokenService(tokenRepo, userRepo, tokenConfig)
+	authUseCase := usecase.NewAuthUseCase(userRepo, tokenRepo, tokenService)
+	userUseCase := usecase.NewUserUseCase(userRepo)
+
+	authHandler := handler.NewAuthHandler(authUseCase)
+	userHandler := handler.NewUserHandler(userUseCase)
+	healthHandler := handler.NewHealthHandler(db)
+
+	router := setupRouter(cfg, authHandler, userHandler, healthHandler, authUseCase)
 
 	srv := &http.Server{
 		Addr:         cfg.Server.Port,
@@ -106,7 +152,13 @@ func initDB(cfg *config.Config) (*sqlx.DB, error) {
 	return db, nil
 }
 
-func setupRouter(cfg *config.Config, userHandler *handler.UserHandler) *gin.Engine {
+func setupRouter(
+	cfg *config.Config,
+	authHandler *handler.AuthHandler,
+	userHandler *handler.UserHandler,
+	healthHandler *handler.HealthHandler,
+	authUseCase usecase.AuthUseCase,
+) *gin.Engine {
 	if cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -119,22 +171,34 @@ func setupRouter(cfg *config.Config, userHandler *handler.UserHandler) *gin.Engi
 	router.Use(middleware.CORSMiddleware())
 	router.Use(middleware.RateLimiterMiddleware())
 
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status": "healthy",
-			"time":   time.Now().Unix(),
-		})
-	})
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	v1 := router.Group("/api/v1")
+	auth := router.Group("/api/v1/auth")
 	{
-		users := v1.Group("/users")
+		auth.POST("/register", authHandler.Register)
+		auth.POST("/login", authHandler.Login)
+		auth.POST("/refresh", authHandler.RefreshToken)
+		auth.POST("/logout", middleware.AuthMiddleware(authUseCase), authHandler.Logout)
+	}
+
+	api := router.Group("/api/v1")
+	api.Use(middleware.AuthMiddleware(authUseCase))
+	{
+		users := api.Group("/users")
 		{
 			users.POST("", userHandler.CreateUser)
 			users.GET("", userHandler.GetAllUsers)
 			users.GET("/:id", userHandler.GetUser)
 			users.PUT("/:id", userHandler.UpdateUser)
 			users.DELETE("/:id", userHandler.DeleteUser)
+		}
+	}
+
+	api.Use(middleware.AuthMiddleware(authUseCase))
+	{
+		health := api.Group("/health")
+		{
+			health.GET("", healthHandler.Check)
 		}
 	}
 
